@@ -1,4 +1,4 @@
-# 💧 AquaQuiz — Apple Water Glassmorphism MCQ Practice & Quiz App
+# 💧 YASH — Apple Water Glassmorphism MCQ Practice & Quiz App
 
 A mobile-first, Apple-inspired **Water Glassmorphism** MCQ practice and quiz web application for **Conservation Geography (NPTEL / University Syllabus)**, covering all 12 weeks (120 verified MCQs) with week-wise filtering and comprehensive all-in-one mode.
 

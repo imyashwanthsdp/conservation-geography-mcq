@@ -197,15 +197,6 @@ function updateTimerDisplay() {
 
 // --- Reset Button Handler ---
 function resetCurrentScope() {
-  const answeredCount = state.mode === 'practice'
-    ? Object.keys(state.practiceAnswers).length
-    : Object.keys(state.quizAnswers).length;
-
-  if (answeredCount > 0 && !state.quizSubmitted) {
-    const ok = confirm(`Are you sure you want to reset all answers for this set?`);
-    if (!ok) return;
-  }
-
   playWaterDropSound();
 
   state.practiceAnswers = {};
@@ -217,11 +208,14 @@ function resetCurrentScope() {
     startQuizTimer();
   }
 
+  // Remove any prepended celebration card if it was rendered
+  document.querySelectorAll('.results-card').forEach(el => el.remove());
+
   renderTopicBanner();
   renderAllQuestions();
   updateDock();
 
-  // Smooth scroll to top of questions container
+  // Smooth scroll to top
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -754,8 +748,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Bottom dock buttons
-  document.getElementById('dock-reset-btn')?.addEventListener('click', resetCurrentScope);
+  // Global Click Delegation for Reset Buttons (Dock, Banner, Stream Footer)
+  document.addEventListener('click', (e) => {
+    const resetTarget = e.target.closest('#dock-reset-btn, #topic-reset-btn, #stream-reset-btn, .topic-reset-btn, .reset-action');
+    if (resetTarget) {
+      e.preventDefault();
+      resetCurrentScope();
+    }
+  });
+
   document.getElementById('dock-center-pill')?.addEventListener('click', openOverviewModal);
 
   // Modal close buttons
