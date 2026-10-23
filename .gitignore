@@ -7,5 +7,7 @@ check_glyphs.py
 generate_questions.py
 check_repos.py
 create_github_repo.py
+enable_pages.py
+check_pages.py
 questions_head.js
 deploy.py
