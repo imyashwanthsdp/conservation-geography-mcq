@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#060913">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Apple-style Water Glassmorphism MCQ Practice & Quiz app for Conservation Geography. Week-wise and all-weeks practice with instant answers and quiz mode.">
+  <title>AquaQuiz • Conservation Geography MCQs</title>
+
+  <!-- Typography: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Liquid Ambient Background with Organic Refraction Orbs -->
+  <div class="liquid-bg-container">
+    <div class="liquid-orb orb-cyan"></div>
+    <div class="liquid-orb orb-violet"></div>
+    <div class="liquid-orb orb-indigo"></div>
+    <div class="liquid-orb orb-emerald"></div>
+  </div>
+  <div class="water-shimmer"></div>
+
+  <!-- Main Mobile-First Shell -->
+  <main class="app-container">
+
+    <!-- Glass Floating Header -->
+    <header class="header-glass">
+      <div class="brand-section">
+        <div class="water-logo">💧</div>
+        <div class="brand-info">
+          <h1>AquaQuiz</h1>
+          <p>Conservation Geography</p>
+        </div>
+      </div>
+
+      <!-- Mode Segmented Control -->
+      <nav class="header-actions" aria-label="Mode Selection">
+        <div class="mode-segmented-control">
+          <button class="segment-btn active" data-mode="practice">
+            <span>⚡ Practice</span>
+          </button>
+          <button class="segment-btn" data-mode="quiz">
+            <span>📝 Quiz</span>
+          </button>
+        </div>
+        <button id="sound-toggle-btn" class="icon-btn active" title="Toggle Sound Feedback" aria-label="Sound Toggle">
+          🔔
+        </button>
+      </nav>
+    </header>
+
+    <!-- Week Selector Horizontal Scroll Bar -->
+    <section class="week-nav-container" aria-label="Week Selection">
+      <div id="week-pills-track" class="week-scroll-track">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </section>
+
+    <!-- Dynamic Topic & Scope Banner -->
+    <section id="topic-banner" class="topic-banner" aria-label="Topic Information">
+      <!-- Rendered dynamically by app.js -->
+    </section>
+
+    <!-- Main Question / Results Card Container -->
+    <section id="main-card-container" aria-live="polite">
+      <!-- Question Card or Results Screen rendered by app.js -->
+    </section>
+
+  </main>
+
+  <!-- Sticky Bottom Navigation Dock (Thumb-Zone Optimized) -->
+  <nav class="bottom-dock-container" aria-label="Question Navigation">
+    <div class="dock-glass">
+      <button id="dock-prev-btn" class="dock-btn" aria-label="Previous Question">
+        ← <span>Prev</span>
+      </button>
+
+      <button id="dock-center-pill" class="dock-center-pill" title="Open Question Jump Grid" aria-label="Question Grid Overview">
+        📋 1 / 10
+      </button>
+
+      <div id="dock-action-slot">
+        <button id="dock-next-btn" class="dock-btn primary-action" aria-label="Next Question">
+          <span>Next</span> →
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Quick Jump Grid Bottom Sheet / Drawer Modal -->
+  <div id="overview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <div class="drawer-glass">
+      <div class="drawer-header">
+        <h3 id="drawer-title">Question Grid</h3>
+        <button id="modal-close-btn" class="close-btn" aria-label="Close Overview">&times;</button>
+      </div>
+      <div class="question-grid-scroll">
+        <div id="grid-pills-container" class="grid-pills">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-secondary); padding: 4px 6px;">
+        <span>🟢 Correct / Current</span>
+        <span>🔵 Answered</span>
+        <span>⚪ Remaining</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data & Application Logic Scripts -->
+  <script src="questions.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Git ignore
+*.pdf
+raw_streams.json
+extract_mcqs.py
+test_parser.py
+check_glyphs.py
+generate_questions.py
+check_repos.py
+create_github_repo.py
+questions_head.js
+deploy.py
