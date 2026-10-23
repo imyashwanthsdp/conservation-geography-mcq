@@ -76,20 +76,18 @@
   </main>
 
   <!-- Sticky Bottom Navigation Dock (Thumb-Zone Optimized) -->
-  <nav class="bottom-dock-container" aria-label="Question Navigation">
+  <nav class="bottom-dock-container" aria-label="Quick Actions">
     <div class="dock-glass">
-      <button id="dock-prev-btn" class="dock-btn" aria-label="Previous Question">
-        ← <span>Prev</span>
+      <button id="dock-reset-btn" class="dock-btn reset-action" title="Reset All Answers" aria-label="Reset Answers">
+        🔄 <span>Reset</span>
       </button>
 
       <button id="dock-center-pill" class="dock-center-pill" title="Open Question Jump Grid" aria-label="Question Grid Overview">
-        📋 1 / 10
+        📋 <span id="dock-counter">0 / 10</span>
       </button>
 
       <div id="dock-action-slot">
-        <button id="dock-next-btn" class="dock-btn primary-action" aria-label="Next Question">
-          <span>Next</span> →
-        </button>
+        <!-- Rendered dynamically: Jump to Grid or Submit Quiz -->
       </div>
     </div>
   </nav>

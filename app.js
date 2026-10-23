@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AquaQuiz - Application Controller
+   AquaQuiz - Application Controller (Single-Page Scrolling Architecture)
    Liquid Water Glassmorphism MCQ Practice & Quiz System
    ========================================================================== */
 
@@ -8,7 +8,6 @@ const state = {
   mode: 'practice',          // 'practice' | 'quiz' | 'results'
   selectedWeek: 'all',       // 'all' | 1..12
   questions: [],             // Active questions in current scope
-  currentIndex: 0,           // Current question index in active questions array
   
   // Practice Mode state: id -> { chosen: number, isCorrect: boolean }
   practiceAnswers: {},
@@ -107,11 +106,11 @@ function playWaterDropSound(isCorrect = null) {
       osc.stop(now + 0.1);
     }
   } catch (e) {
-    // Graceful fallback if audio is blocked
+    // Graceful fallback
   }
 }
 
-// --- Scope & Question Management ---
+// --- Scope Management ---
 function setScope(weekVal) {
   state.selectedWeek = weekVal;
   
@@ -121,19 +120,21 @@ function setScope(weekVal) {
     state.questions = QUESTIONS_DATA.filter(q => q.week === parseInt(weekVal, 10));
   }
   
-  state.currentIndex = 0;
-  
-  // Reset session answers for new scope
+  // Clear answers for the new scope
   state.practiceAnswers = {};
   state.practiceScore = { correct: 0, wrong: 0 };
   state.quizAnswers = {};
   state.quizSubmitted = false;
   resetQuizTimer();
 
+  if (state.mode === 'quiz') {
+    startQuizTimer();
+  }
+
   renderWeekPills();
   renderTopicBanner();
-  renderQuestion();
-  renderDock();
+  renderAllQuestions();
+  updateDock();
 }
 
 function setMode(newMode) {
@@ -141,26 +142,29 @@ function setMode(newMode) {
   state.mode = newMode;
   playWaterDropSound();
 
-  // Reset timers & state if entering quiz mode
+  // Reset states
+  state.practiceAnswers = {};
+  state.practiceScore = { correct: 0, wrong: 0 };
+  state.quizAnswers = {};
+  state.quizSubmitted = false;
+
   if (newMode === 'quiz') {
-    state.quizAnswers = {};
-    state.quizSubmitted = false;
     startQuizTimer();
   } else {
     resetQuizTimer();
   }
 
-  // Update mode selector UI
+  // Update mode selector buttons
   document.querySelectorAll('.segment-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === newMode);
   });
 
   renderTopicBanner();
-  renderQuestion();
-  renderDock();
+  renderAllQuestions();
+  updateDock();
 }
 
-// --- Quiz Timer Functions ---
+// --- Quiz Timer ---
 function startQuizTimer() {
   resetQuizTimer();
   state.quizSeconds = 0;
@@ -191,7 +195,37 @@ function updateTimerDisplay() {
   }
 }
 
-// --- Render Topic Banner & Navigation ---
+// --- Reset Button Handler ---
+function resetCurrentScope() {
+  const answeredCount = state.mode === 'practice'
+    ? Object.keys(state.practiceAnswers).length
+    : Object.keys(state.quizAnswers).length;
+
+  if (answeredCount > 0 && !state.quizSubmitted) {
+    const ok = confirm(`Are you sure you want to reset all answers for this set?`);
+    if (!ok) return;
+  }
+
+  playWaterDropSound();
+
+  state.practiceAnswers = {};
+  state.practiceScore = { correct: 0, wrong: 0 };
+  state.quizAnswers = {};
+  state.quizSubmitted = false;
+
+  if (state.mode === 'quiz') {
+    startQuizTimer();
+  }
+
+  renderTopicBanner();
+  renderAllQuestions();
+  updateDock();
+
+  // Smooth scroll to top of questions container
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// --- Render Header / Topic Banner ---
 function renderWeekPills() {
   const container = document.getElementById('week-pills-track');
   if (!container) return;
@@ -213,16 +247,13 @@ function renderWeekPills() {
 
   container.innerHTML = html;
 
-  // Event listeners for week pills
   container.querySelectorAll('.week-pill').forEach(pill => {
     pill.addEventListener('click', () => {
       playWaterDropSound();
-      const w = pill.dataset.week;
-      setScope(w);
+      setScope(pill.dataset.week);
     });
   });
 
-  // Scroll active pill into view smoothly
   const activePill = container.querySelector('.week-pill.active');
   if (activePill) {
     activePill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -253,18 +284,23 @@ function renderTopicBanner() {
       <h2 class="topic-heading">${headingText}</h2>
     </div>
     <div class="topic-stats">
+      <button id="topic-reset-btn" class="topic-reset-btn" title="Reset All Answers in this scope">
+        🔄 Reset
+      </button>
       ${state.mode === 'quiz' ? `
         <div id="timer-badge" class="badge-pill timer-badge">⏱️ ${formatTime(state.quizSeconds)}</div>
       ` : `
         <div class="badge-pill">✓ ${state.practiceScore.correct} / ✗ ${state.practiceScore.wrong}</div>
       `}
-      <div class="badge-pill">${answeredInScope}/${state.questions.length} done</div>
+      <div class="badge-pill" id="banner-count-badge">${answeredInScope}/${state.questions.length} answered</div>
     </div>
   `;
+
+  document.getElementById('topic-reset-btn')?.addEventListener('click', resetCurrentScope);
 }
 
-// --- Render Main Question View ---
-function renderQuestion() {
+// --- Render All Questions in a Continuous Scrolling Feed ---
+function renderAllQuestions() {
   const container = document.getElementById('main-card-container');
   if (!container) return;
 
@@ -273,113 +309,158 @@ function renderQuestion() {
     return;
   }
 
-  const q = state.questions[state.currentIndex];
-  const total = state.questions.length;
-  const progressPercent = Math.round(((state.currentIndex + 1) / total) * 100);
-
-  // Check state for this question
-  const isPracticeAnswered = state.mode === 'practice' && state.practiceAnswers[q.id];
-  const practiceRecord = isPracticeAnswered ? state.practiceAnswers[q.id] : null;
-  const quizSelectedOption = state.mode === 'quiz' ? state.quizAnswers[q.id] : null;
-
   const letters = ['A', 'B', 'C', 'D'];
+  const total = state.questions.length;
 
-  let optionsHtml = '';
-  q.options.forEach((optText, idx) => {
-    let extraClass = '';
-    let iconContent = '';
+  let streamHtml = `<div class="questions-stream">`;
 
-    if (state.mode === 'practice' && isPracticeAnswered) {
-      if (idx === q.answer) {
-        extraClass = 'practice-correct';
-        iconContent = '✓';
-      } else if (idx === practiceRecord.chosen) {
-        extraClass = 'practice-wrong';
-        iconContent = '✗';
-      } else {
-        extraClass = 'practice-dimmed';
+  state.questions.forEach((q, idx) => {
+    const isPracticeAns = state.mode === 'practice' && state.practiceAnswers[q.id];
+    const practiceRecord = isPracticeAns ? state.practiceAnswers[q.id] : null;
+    const quizSelected = state.mode === 'quiz' ? state.quizAnswers[q.id] : null;
+
+    let optionsHtml = '';
+    q.options.forEach((optText, optIdx) => {
+      let extraClass = '';
+      let iconContent = '';
+
+      if (state.mode === 'practice' && isPracticeAns) {
+        if (optIdx === q.answer) {
+          extraClass = 'practice-correct';
+          iconContent = '✓';
+        } else if (optIdx === practiceRecord.chosen) {
+          extraClass = 'practice-wrong';
+          iconContent = '✗';
+        } else {
+          extraClass = 'practice-dimmed';
+        }
+      } else if (state.mode === 'quiz') {
+        if (state.quizSubmitted) {
+          if (optIdx === q.answer) {
+            extraClass = 'quiz-review-correct';
+            iconContent = '✓';
+          } else if (optIdx === quizSelected) {
+            extraClass = 'quiz-review-wrong';
+            iconContent = '✗';
+          }
+        } else if (quizSelected === optIdx) {
+          extraClass = 'quiz-selected';
+          iconContent = '●';
+        }
       }
-    } else if (state.mode === 'quiz') {
-      if (quizSelectedOption === idx) {
-        extraClass = 'quiz-selected';
-        iconContent = '●';
-      }
+
+      const disabledAttr = (state.mode === 'practice' && isPracticeAns) || state.quizSubmitted ? 'disabled' : '';
+
+      optionsHtml += `
+        <button class="option-btn ${extraClass}" data-qid="${q.id}" data-optindex="${optIdx}" ${disabledAttr}>
+          <span class="option-letter">${letters[optIdx]}</span>
+          <span class="option-text">${optText}</span>
+          <span class="option-status-icon">${iconContent}</span>
+        </button>
+      `;
+    });
+
+    let feedbackHtml = '';
+    if (state.mode === 'practice' && isPracticeAns) {
+      const isCorr = practiceRecord.isCorrect;
+      feedbackHtml = `
+        <div class="instant-feedback-banner ${isCorr ? 'correct' : 'wrong'}">
+          <span>${isCorr ? '✓ Correct Answer!' : `✗ Incorrect (Correct: Option ${letters[q.answer]})`}</span>
+          <span style="font-size:0.75rem; opacity:0.85;">Instant Reveal</span>
+        </div>
+      `;
     }
 
-    const disabledAttr = (state.mode === 'practice' && isPracticeAnswered) ? 'disabled' : '';
+    streamHtml += `
+      <article class="question-card" id="q-card-${q.id}" data-id="${q.id}">
+        <div class="question-header">
+          <div class="question-meta">
+            <span class="q-number-chip">Question ${idx + 1} of ${total}</span>
+            <span class="mode-badge-chip">Week ${q.week}</span>
+          </div>
+        </div>
 
-    optionsHtml += `
-      <button class="option-btn ${extraClass}" data-index="${idx}" ${disabledAttr}>
-        <span class="option-letter">${letters[idx]}</span>
-        <span class="option-text">${optText}</span>
-        <span class="option-status-icon">${iconContent}</span>
-      </button>
+        <h3 class="question-text">${q.question}</h3>
+
+        <div class="feedback-slot">
+          ${feedbackHtml}
+        </div>
+
+        <div class="options-grid">
+          ${optionsHtml}
+        </div>
+      </article>
     `;
   });
 
-  // Practice mode instant status banner
-  let feedbackBannerHtml = '';
-  if (state.mode === 'practice' && isPracticeAnswered) {
-    const isCorr = practiceRecord.isCorrect;
-    feedbackBannerHtml = `
-      <div class="instant-feedback-banner ${isCorr ? 'correct' : 'wrong'}">
-        <span>${isCorr ? '✓ Correct Answer!' : `✗ Incorrect (Correct: Option ${letters[q.answer]})`}</span>
-        <span style="font-size:0.75rem; opacity:0.85;">No explanations needed • Instant Result</span>
+  // Footer action card at the bottom of the scroll stream
+  let footerCardHtml = '';
+  if (state.mode === 'quiz' && !state.quizSubmitted) {
+    footerCardHtml = `
+      <div class="stream-footer-card">
+        <h3 style="font-size:1.15rem; color:#fff;">Finished answering?</h3>
+        <p style="color:var(--text-secondary); font-size:0.9rem;">Submit your answers to get your accuracy score and detailed review.</p>
+        <div class="stream-footer-actions">
+          <button id="stream-submit-btn" class="dock-btn submit-action" style="height:48px; padding:0 28px; font-size:0.95rem;">
+            <span>🚀 Submit Quiz</span>
+          </button>
+          <button id="stream-reset-btn" class="dock-btn reset-action" style="height:48px; padding:0 20px;">
+            <span>🔄 Reset All</span>
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (state.mode === 'practice') {
+    footerCardHtml = `
+      <div class="stream-footer-card">
+        <h3 style="font-size:1.15rem; color:#fff;">End of Questions</h3>
+        <p style="color:var(--text-secondary); font-size:0.9rem;">Review your answers or reset to practice again.</p>
+        <div class="stream-footer-actions">
+          <button id="stream-reset-btn" class="dock-btn reset-action" style="height:48px; padding:0 24px;">
+            <span>🔄 Reset Practice</span>
+          </button>
+          <button id="stream-to-quiz-btn" class="dock-btn primary-action" style="height:48px; padding:0 24px;">
+            <span>📝 Test in Quiz Mode</span>
+          </button>
+        </div>
       </div>
     `;
   }
 
-  container.innerHTML = `
-    <div class="question-card">
-      <div class="question-header">
-        <div class="question-meta">
-          <span class="q-number-chip">Q ${state.currentIndex + 1} of ${total}</span>
-          <span class="mode-badge-chip">Week ${q.week} • ${state.mode === 'practice' ? '⚡ Instant Practice' : '📝 Quiz Mode'}</span>
-        </div>
-        <button id="shuffle-btn" class="icon-btn" title="Shuffle Questions">🔀</button>
-      </div>
+  streamHtml += footerCardHtml + `</div>`;
+  container.innerHTML = streamHtml;
 
-      <div class="progress-bar-container">
-        <div class="progress-bar-fill" style="width: ${progressPercent}%;"></div>
-      </div>
-
-      <h3 class="question-text">${q.question}</h3>
-
-      ${feedbackBannerHtml}
-
-      <div class="options-grid">
-        ${optionsHtml}
-      </div>
-    </div>
-  `;
-
-  // Option selection listeners
+  // Attach option click listeners
   container.querySelectorAll('.option-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const chosenIdx = parseInt(btn.dataset.index, 10);
-      handleOptionSelect(chosenIdx);
+    btn.addEventListener('click', (e) => {
+      const qid = btn.dataset.qid;
+      const optIdx = parseInt(btn.dataset.optindex, 10);
+      handleOptionSelect(qid, optIdx);
     });
   });
 
-  // Shuffle button listener
-  const shuffleBtn = document.getElementById('shuffle-btn');
-  if (shuffleBtn) {
-    shuffleBtn.addEventListener('click', shuffleQuestions);
-  }
-
-  renderDock();
+  // Footer button listeners
+  document.getElementById('stream-submit-btn')?.addEventListener('click', submitQuiz);
+  document.getElementById('stream-reset-btn')?.addEventListener('click', resetCurrentScope);
+  document.getElementById('stream-to-quiz-btn')?.addEventListener('click', () => setMode('quiz'));
 }
 
-// --- Option Selection Logic ---
-function handleOptionSelect(chosenIdx) {
-  const q = state.questions[state.currentIndex];
+// --- Option Selection Logic with Smooth In-Place Updates ---
+function handleOptionSelect(qId, chosenIdx) {
+  const q = state.questions.find(item => item.id === qId);
+  if (!q) return;
+
+  const card = document.getElementById(`q-card-${qId}`);
+  if (!card) return;
+
+  const letters = ['A', 'B', 'C', 'D'];
 
   if (state.mode === 'practice') {
-    // If already answered, do nothing
-    if (state.practiceAnswers[q.id]) return;
+    // Already answered? Ignore further clicks
+    if (state.practiceAnswers[qId]) return;
 
     const isCorrect = chosenIdx === q.answer;
-    state.practiceAnswers[q.id] = { chosen: chosenIdx, isCorrect };
+    state.practiceAnswers[qId] = { chosen: chosenIdx, isCorrect };
 
     if (isCorrect) {
       state.practiceScore.correct++;
@@ -388,114 +469,114 @@ function handleOptionSelect(chosenIdx) {
     }
 
     playWaterDropSound(isCorrect);
-    renderTopicBanner();
-    renderQuestion();
 
-  } else if (state.mode === 'quiz') {
-    // Quiz mode: user can toggle or change answer anytime before submitting
-    state.quizAnswers[q.id] = chosenIdx;
+    // In-place update of options in this card without re-rendering the whole page
+    const optionButtons = card.querySelectorAll('.option-btn');
+    optionButtons.forEach((btn, idx) => {
+      btn.disabled = true;
+      const iconSpan = btn.querySelector('.option-status-icon');
+
+      if (idx === q.answer) {
+        btn.classList.add('practice-correct');
+        if (iconSpan) iconSpan.textContent = '✓';
+      } else if (idx === chosenIdx) {
+        btn.classList.add('practice-wrong');
+        if (iconSpan) iconSpan.textContent = '✗';
+      } else {
+        btn.classList.add('practice-dimmed');
+      }
+    });
+
+    // Insert instant feedback banner
+    const feedbackSlot = card.querySelector('.feedback-slot');
+    if (feedbackSlot) {
+      feedbackSlot.innerHTML = `
+        <div class="instant-feedback-banner ${isCorrect ? 'correct' : 'wrong'}">
+          <span>${isCorrect ? '✓ Correct Answer!' : `✗ Incorrect (Correct: Option ${letters[q.answer]})`}</span>
+          <span style="font-size:0.75rem; opacity:0.85;">Instant Reveal</span>
+        </div>
+      `;
+    }
+
+    updateStatsDisplay();
+
+  } else if (state.mode === 'quiz' && !state.quizSubmitted) {
+    // Quiz mode: user can select or change answer
+    state.quizAnswers[qId] = chosenIdx;
     playWaterDropSound();
-    renderTopicBanner();
-    renderQuestion();
+
+    const optionButtons = card.querySelectorAll('.option-btn');
+    optionButtons.forEach((btn, idx) => {
+      const iconSpan = btn.querySelector('.option-status-icon');
+      if (idx === chosenIdx) {
+        btn.classList.add('quiz-selected');
+        if (iconSpan) iconSpan.textContent = '●';
+      } else {
+        btn.classList.remove('quiz-selected');
+        if (iconSpan) iconSpan.textContent = '';
+      }
+    });
+
+    updateStatsDisplay();
   }
 }
 
-// --- Navigation Dock ---
-function renderDock() {
-  const prevBtn = document.getElementById('dock-prev-btn');
-  const nextBtn = document.getElementById('dock-next-btn');
-  const centerPill = document.getElementById('dock-center-pill');
-  const actionSlot = document.getElementById('dock-action-slot');
+// --- Real-time Stats & Dock Update ---
+function updateStatsDisplay() {
+  const answeredInScope = state.mode === 'practice'
+    ? Object.keys(state.practiceAnswers).length
+    : Object.keys(state.quizAnswers).length;
 
-  const total = state.questions.length;
-
-  if (prevBtn) {
-    prevBtn.disabled = state.currentIndex === 0;
+  const countBadge = document.getElementById('banner-count-badge');
+  if (countBadge) {
+    countBadge.textContent = `${answeredInScope}/${state.questions.length} answered`;
   }
 
-  if (centerPill) {
-    centerPill.innerHTML = `📋 ${state.currentIndex + 1} / ${total}`;
+  // Update score in banner if practice mode
+  if (state.mode === 'practice') {
+    const banner = document.getElementById('topic-banner');
+    const scoreBadge = banner?.querySelector('.badge-pill:nth-child(2)');
+    if (scoreBadge && scoreBadge.id !== 'timer-badge') {
+      scoreBadge.textContent = `✓ ${state.practiceScore.correct} / ✗ ${state.practiceScore.wrong}`;
+    }
+  }
+
+  updateDock();
+}
+
+function updateDock() {
+  const counterSpan = document.getElementById('dock-counter');
+  const actionSlot = document.getElementById('dock-action-slot');
+  const total = state.questions.length;
+
+  const answeredInScope = state.mode === 'practice'
+    ? Object.keys(state.practiceAnswers).length
+    : Object.keys(state.quizAnswers).length;
+
+  if (counterSpan) {
+    counterSpan.textContent = `${answeredInScope} / ${total}`;
   }
 
   if (actionSlot) {
-    if (state.mode === 'quiz') {
-      const answeredCount = Object.keys(state.quizAnswers).length;
-      const isLast = state.currentIndex === total - 1;
-      
-      // If last question or all answered, show Submit button
-      if (isLast || answeredCount === total) {
-        actionSlot.innerHTML = `
-          <button id="dock-submit-btn" class="dock-btn submit-action">
-            <span>Submit</span> 🚀
-          </button>
-        `;
-        document.getElementById('dock-submit-btn')?.addEventListener('click', submitQuiz);
-      } else {
-        actionSlot.innerHTML = `
-          <button id="dock-next-btn" class="dock-btn primary-action">
-            <span>Next</span> →
-          </button>
-        `;
-        document.getElementById('dock-next-btn')?.addEventListener('click', goNext);
-      }
+    if (state.mode === 'quiz' && !state.quizSubmitted) {
+      actionSlot.innerHTML = `
+        <button id="dock-submit-btn" class="dock-btn submit-action" title="Submit Quiz">
+          <span>Submit</span> 🚀
+        </button>
+      `;
+      document.getElementById('dock-submit-btn')?.addEventListener('click', submitQuiz);
     } else {
-      // Practice mode
-      if (state.currentIndex === total - 1) {
-        actionSlot.innerHTML = `
-          <button id="dock-finish-btn" class="dock-btn primary-action">
-            <span>Summary</span> 🏆
-          </button>
-        `;
-        document.getElementById('dock-finish-btn')?.addEventListener('click', showPracticeSummary);
-      } else {
-        actionSlot.innerHTML = `
-          <button id="dock-next-btn" class="dock-btn primary-action">
-            <span>Next</span> →
-          </button>
-        `;
-        document.getElementById('dock-next-btn')?.addEventListener('click', goNext);
-      }
+      actionSlot.innerHTML = `
+        <button id="dock-jump-btn" class="dock-btn jump-action" title="Jump to Question">
+          <span>Grid</span> 📋
+        </button>
+      `;
+      document.getElementById('dock-jump-btn')?.addEventListener('click', openOverviewModal);
     }
   }
 }
 
-function goPrev() {
-  if (state.currentIndex > 0) {
-    state.currentIndex--;
-    playWaterDropSound();
-    renderQuestion();
-  }
-}
-
-function goNext() {
-  if (state.currentIndex < state.questions.length - 1) {
-    state.currentIndex++;
-    playWaterDropSound();
-    renderQuestion();
-  }
-}
-
-function jumpToIndex(idx) {
-  if (idx >= 0 && idx < state.questions.length) {
-    state.currentIndex = idx;
-    playWaterDropSound();
-    closeModal();
-    renderQuestion();
-  }
-}
-
-// --- Shuffle Function ---
-function shuffleQuestions() {
-  playWaterDropSound();
-  for (let i = state.questions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [state.questions[i], state.questions[j]] = [state.questions[j], state.questions[i]];
-  }
-  state.currentIndex = 0;
-  renderQuestion();
-}
-
-// --- Submit Quiz & Calculate Results ---
+// --- Submit Quiz & Celebration Review Card ---
 function submitQuiz() {
   const total = state.questions.length;
   const answeredCount = Object.keys(state.quizAnswers).length;
@@ -511,13 +592,10 @@ function submitQuiz() {
 
   let correctCount = 0;
   let wrongCount = 0;
-  let unansCount = 0;
 
   state.questions.forEach(q => {
     const userChoice = state.quizAnswers[q.id];
-    if (userChoice === undefined) {
-      unansCount++;
-    } else if (userChoice === q.answer) {
+    if (userChoice === q.answer) {
       correctCount++;
     } else {
       wrongCount++;
@@ -525,52 +603,25 @@ function submitQuiz() {
   });
 
   const percent = Math.round((correctCount / total) * 100);
-
-  // Render Celebration Results Card
-  const container = document.getElementById('main-card-container');
-  if (!container) return;
-
   const circumference = 408;
   const offset = circumference - (circumference * percent) / 100;
 
   let tier = "🌟 Outstanding Mastery!";
-  let sub = "You have demonstrated stellar knowledge of Conservation Geography!";
+  let sub = "You have demonstrated exceptional knowledge of Conservation Geography!";
   if (percent < 50) {
     tier = "🌱 Keep Practicing!";
-    sub = "Try practice mode to build confidence on instant answers!";
+    sub = "Try practice mode with instant answers to strengthen key topics.";
   } else if (percent < 80) {
     tier = "👏 Great Achievement!";
-    sub = "Solid understanding! A few more revisions will make it perfect.";
+    sub = "Solid understanding! A quick revision will push you to 100%.";
   }
 
-  // Letters
-  const letters = ['A', 'B', 'C', 'D'];
+  // Prepend celebration card above the questions stream
+  const container = document.getElementById('main-card-container');
+  if (!container) return;
 
-  // Review List
-  let reviewHtml = '';
-  state.questions.forEach((q, i) => {
-    const userChoice = state.quizAnswers[q.id];
-    const isCorrect = userChoice === q.answer;
-    const isUnans = userChoice === undefined;
-
-    reviewHtml += `
-      <div class="review-item">
-        <span class="review-q-num">Question ${i + 1} (Week ${q.week})</span>
-        <div class="review-q-title">${q.question}</div>
-        <div class="review-answer-row">
-          <div class="review-your-ans ${isCorrect ? 'is-correct' : (isUnans ? '' : 'is-wrong')}">
-            Your Choice: ${isUnans ? 'Unanswered ⚠️' : `Option ${letters[userChoice]} (${q.options[userChoice]})`}
-          </div>
-          <div class="review-correct-ans">
-            Correct Answer: Option ${letters[q.answer]} (${q.options[q.answer]})
-          </div>
-        </div>
-      </div>
-    `;
-  });
-
-  container.innerHTML = `
-    <div class="results-card">
+  const resultsHeaderHtml = `
+    <div class="results-card" style="margin-bottom: 24px;">
       <div class="score-gauge-container">
         <svg class="gauge-svg" viewBox="0 0 160 160">
           <defs>
@@ -617,91 +668,25 @@ function submitQuiz() {
           <span>⚡ Switch to Practice Mode</span>
         </button>
       </div>
-
-      <h3 style="font-size: 1.1rem; margin-top: 10px; align-self: flex-start; color: #ffffff;">Detailed Question Review</h3>
-      <div class="review-list-container">
-        ${reviewHtml}
-      </div>
+      <p style="font-size: 0.85rem; color: var(--water-cyan); margin-top: 6px;">
+        👇 Scroll down to review each question with highlighted correct & chosen answers!
+      </p>
     </div>
   `;
 
-  // Attach button listeners
-  document.getElementById('retry-quiz-btn')?.addEventListener('click', () => {
-    state.quizAnswers = {};
-    state.currentIndex = 0;
-    startQuizTimer();
-    renderQuestion();
-  });
+  // Re-render questions with review highlights
+  renderAllQuestions();
+  container.insertAdjacentHTML('afterbegin', resultsHeaderHtml);
 
-  document.getElementById('practice-scope-btn')?.addEventListener('click', () => {
-    setMode('practice');
-  });
+  // Attach listeners on results card buttons
+  document.getElementById('retry-quiz-btn')?.addEventListener('click', resetCurrentScope);
+  document.getElementById('practice-scope-btn')?.addEventListener('click', () => setMode('practice'));
 
-  // Hide bottom dock during results review
-  const dock = document.querySelector('.bottom-dock-container');
-  if (dock) dock.style.display = 'none';
+  // Smoothly scroll to results card
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// --- Practice Summary View ---
-function showPracticeSummary() {
-  const container = document.getElementById('main-card-container');
-  if (!container) return;
-
-  const total = state.questions.length;
-  const correct = state.practiceScore.correct;
-  const wrong = state.practiceScore.wrong;
-  const percent = total > 0 ? Math.round((correct / total) * 100) : 0;
-
-  playWaterDropSound(true);
-
-  container.innerHTML = `
-    <div class="results-card">
-      <div class="water-logo" style="width: 60px; height: 60px; font-size: 32px;">💧</div>
-      <div class="results-summary">
-        <h2>Practice Completed!</h2>
-        <p>You have practiced all questions in this set with instant answer reveals.</p>
-      </div>
-
-      <div class="stats-grid-row">
-        <div class="stat-box">
-          <span class="stat-value green">${correct}</span>
-          <span class="stat-label">Correct</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-value red">${wrong}</span>
-          <span class="stat-label">Review Needed</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-value blue">${percent}%</span>
-          <span class="stat-label">Accuracy</span>
-        </div>
-      </div>
-
-      <div class="results-actions">
-        <button id="restart-practice-btn" class="full-btn primary-btn">
-          <span>🔄 Practice Again</span>
-        </button>
-        <button id="try-quiz-btn" class="full-btn">
-          <span>📝 Test in Quiz Mode</span>
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.getElementById('restart-practice-btn')?.addEventListener('click', () => {
-    state.practiceAnswers = {};
-    state.practiceScore = { correct: 0, wrong: 0 };
-    state.currentIndex = 0;
-    renderTopicBanner();
-    renderQuestion();
-  });
-
-  document.getElementById('try-quiz-btn')?.addEventListener('click', () => {
-    setMode('quiz');
-  });
-}
-
-// --- Overview Modal Drawer ---
+// --- Quick Jump Drawer Modal ---
 function openOverviewModal() {
   const modal = document.getElementById('overview-modal');
   const gridContainer = document.getElementById('grid-pills-container');
@@ -710,9 +695,7 @@ function openOverviewModal() {
   let pillsHtml = '';
   state.questions.forEach((q, idx) => {
     let pillClass = '';
-    if (idx === state.currentIndex) {
-      pillClass = 'current';
-    } else if (state.mode === 'practice') {
+    if (state.mode === 'practice') {
       const ans = state.practiceAnswers[q.id];
       if (ans) {
         pillClass = ans.isCorrect ? 'correct-pill' : 'wrong-pill';
@@ -724,7 +707,7 @@ function openOverviewModal() {
     }
 
     pillsHtml += `
-      <button class="grid-pill-btn ${pillClass}" data-index="${idx}">
+      <button class="grid-pill-btn ${pillClass}" data-qid="${q.id}" data-index="${idx}">
         ${idx + 1}
       </button>
     `;
@@ -734,8 +717,12 @@ function openOverviewModal() {
 
   gridContainer.querySelectorAll('.grid-pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.index, 10);
-      jumpToIndex(idx);
+      const qid = btn.dataset.qid;
+      closeModal();
+      const targetCard = document.getElementById(`q-card-${qid}`);
+      if (targetCard) {
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     });
   });
 
@@ -745,29 +732,6 @@ function openOverviewModal() {
 function closeModal() {
   const modal = document.getElementById('overview-modal');
   if (modal) modal.classList.remove('active');
-}
-
-// --- Keyboard Navigation ---
-function initKeyboardShortcuts() {
-  window.addEventListener('keydown', (e) => {
-    // If modal is open, ignore or close on Escape
-    if (e.key === 'Escape') {
-      closeModal();
-      return;
-    }
-
-    if (e.key === 'ArrowLeft') {
-      goPrev();
-    } else if (e.key === 'ArrowRight') {
-      goNext();
-    } else if (['1', '2', '3', '4'].includes(e.key)) {
-      const optIdx = parseInt(e.key, 10) - 1;
-      handleOptionSelect(optIdx);
-    } else if (['a', 'b', 'c', 'd'].includes(e.key.toLowerCase())) {
-      const map = { a: 0, b: 1, c: 2, d: 3 };
-      handleOptionSelect(map[e.key.toLowerCase()]);
-    }
-  });
 }
 
 // --- Initialization ---
@@ -791,7 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Bottom dock buttons
-  document.getElementById('dock-prev-btn')?.addEventListener('click', goPrev);
+  document.getElementById('dock-reset-btn')?.addEventListener('click', resetCurrentScope);
   document.getElementById('dock-center-pill')?.addEventListener('click', openOverviewModal);
 
   // Modal close buttons
@@ -799,8 +763,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('overview-modal')?.addEventListener('click', (e) => {
     if (e.target.id === 'overview-modal') closeModal();
   });
-
-  initKeyboardShortcuts();
 
   // Start with All Weeks scope in Practice Mode
   setScope('all');
